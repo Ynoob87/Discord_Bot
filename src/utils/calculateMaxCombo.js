@@ -21,7 +21,7 @@ const getMaxCombo = async (beatmapId) => {
 
     if (response.data && response.data.max_combo) {
       const maxCombo = response.data.max_combo;
-      console.log(`地圖ID: ${beatmapId} 的最大 Combo 數是: ${maxCombo}`);
+      //console.log(`地圖ID: ${beatmapId} 的最大 Combo 數是: ${maxCombo}`);
       return maxCombo;
     } else {
       throw new Error("未能獲取地圖數據或最大 Combo 數");

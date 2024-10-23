@@ -1,11 +1,9 @@
-// 導入依賴項
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import axios from "axios";
 import dotenv from "dotenv";
-// 一些函式庫
 import { getOsuToken } from "@/utils/getOsuToken";
-import { convertToPercentage } from "@/utils/convertToPercentage";
 import { getMaxCombo } from "@/utils/calculateMaxCombo";
+import { getPP } from "@/utils/calculatePP";
 
 dotenv.config();
 
@@ -29,13 +27,12 @@ export const command = new SlashCommandBuilder()
   );
 
 export const action = async (interaction) => {
+  await interaction.deferReply(); // 立即延遲回應
   const username = interaction.options.getString("用戶名");
   const mode = interaction.options.getString("模式");
-
   try {
     const accessToken = await getOsuToken();
     console.log(`查詢用戶名: ${username}`);
-
     const userResponse = await axios.get(
       `https://osu.ppy.sh/api/v2/users/${username}`,
       {
@@ -47,7 +44,6 @@ export const action = async (interaction) => {
 
     const userId = userResponse.data.id;
     console.log(`User ID: ${userId}`);
-
     const response = await axios.get(
       `https://osu.ppy.sh/api/v2/users/${userId}/scores/recent`,
       {
@@ -65,8 +61,43 @@ export const action = async (interaction) => {
     const recentScore = response.data[0];
     if (recentScore) {
       const MaxCombo = await getMaxCombo(recentScore.beatmap.id);
-      console.log(recentScore);
+      const accuracy = (recentScore.accuracy * 100).toFixed(2);
+      const count300 = recentScore.statistics.count_300;
+      const count100 = recentScore.statistics.count_100;
+      const count50 = recentScore.statistics.count_50;
+      const misses = recentScore.statistics.count_miss;
+      const score = recentScore.score;
 
+      // 計算 FC SS 情況下的 PP
+      const pp_SS_FC = await getPP(
+        recentScore.beatmap.id,
+        recentScore.mods,
+        100,
+        MaxCombo,
+        0,
+        score,
+        count300,
+        count100,
+        count50
+      );
+
+      // 計算 非FC 情況下的 PP
+      const ppNoFC =
+        recentScore.pp == null
+          ? await getPP(
+              recentScore.beatmap.id,
+              recentScore.mods,
+              accuracy,
+              recentScore.max_combo,
+              misses,
+              score,
+              count300,
+              count100,
+              count50
+            )
+          : recentScore.pp.toFixed(2);
+
+      //console.log(recentScore);
       const exampleEmbed = new EmbedBuilder()
         .setColor(0x0099ff)
         .setAuthor({
@@ -79,23 +110,13 @@ export const action = async (interaction) => {
         .setURL(recentScore.beatmap.url)
         .setImage(`${recentScore.beatmapset.covers.cover}`)
         .addFields(
-          {
-            name: "獲得的PP",
-            value: `${
-              recentScore.pp == null ? 0 : recentScore.pp.toFixed(2)
-            }PP`,
-            inline: true,
-          },
+          { name: "獲得的PP", value: `${ppNoFC}/${pp_SS_FC}pp`, inline: true },
           {
             name: "地圖評分",
             value: `評分: ${recentScore.rank}, 總分: ${recentScore.score}`,
             inline: true,
           },
-          {
-            name: "準確率",
-            value: `${convertToPercentage(recentScore.accuracy)}`,
-            inline: true,
-          },
+          { name: "準確率", value: `${accuracy}%`, inline: true },
           {
             name: "所使用的Mods",
             value: `${
@@ -115,14 +136,14 @@ export const action = async (interaction) => {
           }
         )
         .setFooter({
-          text: `osu! Mode - ${recentScore.mode}  [ Bot Made By small R ] `,
+          text: `osu! Mode - ${recentScore.mode}  [ Bot Made By small R ]`,
           iconURL:
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Osu%21_Logo_2016.svg/2048px-Osu%21_Logo_2016.svg.png", // 這裡提供一個有效的URL
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Osu%21_Logo_2016.svg/2048px-Osu%21_Logo_2016.svg.png",
         });
 
-      await interaction.reply({ embeds: [exampleEmbed] });
+      await interaction.editReply({ embeds: [exampleEmbed] }); // 編輯回應
     } else {
-      await interaction.reply("未找到最近成績。");
+      await interaction.editReply("未找到最近成績。"); // 編輯回應
     }
     console.log("Successfully replied to interaction");
   } catch (error) {
@@ -131,6 +152,6 @@ export const action = async (interaction) => {
     } else {
       console.error("查詢成績時出錯: ", error.message);
     }
-    await interaction.reply("查詢成績時出錯，請稍後再試。");
+    await interaction.editReply("查詢成績時出錯，請稍後再試。"); // 編輯回應
   }
 };
